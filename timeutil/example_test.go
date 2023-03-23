@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tormoder/fit"
-	"github.com/tormoder/fit/timeutil"
+	"github.com/qdesrame/fit"
+	"github.com/qdesrame/fit/timeutil"
 )
 
 func ExampleSetLocalTimeZone() {

@@ -12,7 +12,7 @@ import (
 
 	"github.com/cespare/xxhash"
 	"github.com/kortschak/utter"
-	"github.com/tormoder/fit"
+	"github.com/qdesrame/fit"
 )
 
 func fitFingerprint(fit *fit.File) uint64 {

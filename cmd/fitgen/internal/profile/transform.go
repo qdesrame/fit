@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/tormoder/fit/internal/types"
+	"github.com/qdesrame/fit/internal/types"
 )
 
 func toCamelCase(s string) string {
