@@ -7,6 +7,7 @@ import "reflect"
 type ActivityFile struct {
 	Activity    *ActivityMsg
 	Sessions    []*SessionMsg
+	Sport       *SportMsg
 	Laps        []*LapMsg
 	Lengths     []*LengthMsg
 	Records     []*RecordMsg
@@ -151,6 +152,8 @@ func (a *ActivityFile) add(msg reflect.Value) {
 	switch tmp := x.(type) {
 	case ActivityMsg:
 		a.Activity = &tmp
+	case SportMsg:
+		a.Sport = &tmp
 	case SessionMsg:
 		tmp.expandComponents()
 		a.Sessions = append(a.Sessions, &tmp)

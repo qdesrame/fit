@@ -123,7 +123,7 @@ func (d *decoder) decode(r io.Reader, headerOnly, fileIDOnly, crcOnly bool) erro
 
 	err := d.decodeHeader()
 	if err != nil {
-		return fmt.Errorf("error decoding header: %v", err)
+		return fmt.Errorf("error decoding header: %w", err)
 	}
 
 	d.file = new(File)
@@ -141,7 +141,7 @@ func (d *decoder) decode(r io.Reader, headerOnly, fileIDOnly, crcOnly bool) erro
 	if crcOnly {
 		_, err = io.CopyN(d.crc, d.r, int64(d.h.DataSize))
 		if err != nil {
-			return fmt.Errorf("error parsing data: %v", err)
+			return fmt.Errorf("error parsing data: %w", err)
 		}
 		return d.checkCRC()
 	}
@@ -157,7 +157,7 @@ func (d *decoder) decode(r io.Reader, headerOnly, fileIDOnly, crcOnly bool) erro
 
 	err = d.parseFileIdMsg()
 	if err != nil {
-		return fmt.Errorf("error parsing file id message: %v", err)
+		return fmt.Errorf("error parsing file id message: %w", err)
 	}
 	if fileIDOnly {
 		return nil
@@ -193,14 +193,14 @@ func (d *decoder) decodeFileData() error {
 
 		b, err = d.readByte()
 		if err != nil {
-			return fmt.Errorf("error parsing record header: %v", err)
+			return fmt.Errorf("error parsing record header: %w", err)
 		}
 
 		switch {
 		case (b & compressedHeaderMask) == compressedHeaderMask:
 			msg, err = d.parseDataMessage(b, true)
 			if err != nil {
-				return fmt.Errorf("parsing compressed timestamp message: %v", err)
+				return fmt.Errorf("parsing compressed timestamp message: %w", err)
 			}
 			if msg.IsValid() {
 				d.file.add(msg)
@@ -208,13 +208,13 @@ func (d *decoder) decodeFileData() error {
 		case (b & mesgDefinitionMask) == mesgDefinitionMask:
 			dm, err = d.parseDefinitionMessage(b)
 			if err != nil {
-				return fmt.Errorf("parsing definition message: %v", err)
+				return fmt.Errorf("parsing definition message: %w", err)
 			}
 			d.defmsgs[dm.localMsgType] = dm
 		case (b & mesgDefinitionMask) == mesgHeaderMask:
 			msg, err = d.parseDataMessage(b, false)
 			if err != nil {
-				return fmt.Errorf("parsing data message: %v", err)
+				return fmt.Errorf("parsing data message: %w", err)
 			}
 			if msg.IsValid() {
 				d.file.add(msg)
@@ -233,7 +233,7 @@ func (d *decoder) checkCRC() error {
 	}
 	if _, err := io.ReadFull(d.r, d.tmp[:bytesForCRC]); err != nil {
 		err = noEOF(err)
-		return fmt.Errorf("error parsing file CRC: %v", err)
+		return fmt.Errorf("error parsing file CRC: %w", err)
 	}
 	d.crc.Write(d.tmp[:bytesForCRC])
 	d.file.CRC = le.Uint16(d.tmp[:bytesForCRC])
@@ -353,7 +353,7 @@ func (ddfd devDataFieldDesc) String() string {
 func (d *decoder) parseFileIdMsg() error {
 	b, err := d.readByte()
 	if err != nil {
-		return fmt.Errorf("error parsing record header: %v", err)
+		return fmt.Errorf("error parsing record header: %w", err)
 	}
 
 	if !((b & mesgDefinitionMask) == mesgDefinitionMask) {
@@ -362,7 +362,7 @@ func (d *decoder) parseFileIdMsg() error {
 
 	dm, err := d.parseDefinitionMessage(b)
 	if err != nil {
-		return fmt.Errorf("error parsing definition message: %v", err)
+		return fmt.Errorf("error parsing definition message: %w", err)
 	}
 	if dm.globalMsgNum != MesgNumFileId {
 		return fmt.Errorf("parsed definition message was not for file_id (was %v)", dm.globalMsgNum)
@@ -371,7 +371,7 @@ func (d *decoder) parseFileIdMsg() error {
 
 	b, err = d.readByte()
 	if err != nil {
-		return fmt.Errorf("error parsing record header: %v", err)
+		return fmt.Errorf("error parsing record header: %w", err)
 	}
 
 	if !((b & mesgHeaderMask) == mesgHeaderMask) {
@@ -379,7 +379,7 @@ func (d *decoder) parseFileIdMsg() error {
 	}
 	msg, err := d.parseDataMessage(b, false)
 	if err != nil {
-		return fmt.Errorf("error reading data message:  %v", err)
+		return fmt.Errorf("error reading data message:  %w", err)
 	}
 
 	_, ok := msg.Interface().(FileIdMsg)
@@ -426,7 +426,7 @@ func (d *decoder) parseDefinitionMessage(recordHeader byte) (*defmsg, error) {
 	}
 
 	if err = d.readFull(d.tmp[:2]); err != nil {
-		return nil, fmt.Errorf("error parsing global message number: %v", err)
+		return nil, fmt.Errorf("error parsing global message number: %w", err)
 	}
 	dm.globalMsgNum = MesgNum(dm.arch.Uint16(d.tmp[:2]))
 	if dm.globalMsgNum == MesgNumInvalid {
@@ -446,15 +446,20 @@ func (d *decoder) parseDefinitionMessage(recordHeader byte) (*defmsg, error) {
 	}
 
 	if err = d.readFull(d.tmp[0 : 3*uint16(dm.fields)]); err != nil {
-		return nil, fmt.Errorf("error parsing fields: %v", err)
+		return nil, fmt.Errorf("error parsing fields: %w", err)
 	}
 
 	dm.fieldDefs = make([]fieldDef, dm.fields)
 	for i, fd := range dm.fieldDefs {
 		fd.num = d.tmp[i*3]
 		fd.size = d.tmp[(i*3)+1]
-		fd.btype = types.DecodeBase(d.tmp[(i*3)+2])
+		fd.btype = types.Base(d.tmp[(i*3)+2])
+		if int(fd.size)%fd.btype.Size() != 0 { // THIS IS THE FUCKING FIX
+			fd.btype = types.BaseByte
+		}
+		d.opts.logger.Println("base type", fd.btype)
 		if err = d.validateFieldDef(dm.globalMsgNum, fd); err != nil {
+			d.opts.logger.Println("error field definition:", fd)
 			if d.debug {
 				d.opts.logger.Println("illegal definition message:", dm)
 			}
@@ -515,12 +520,22 @@ func (d *decoder) validateFieldDef(gmsgnum MesgNum, dfield fieldDef) error {
 	// Verify that field definition size is not less than field definition
 	// base type size.
 	if int(dfield.size) < dfield.btype.Size() {
-		return fmt.Errorf(
-			"field %d: size (%d) is less than base type size (%d)",
-			dfield.num, dfield.size, dfield.btype.Size())
+		if d.debug {
+			d.opts.logger.Printf(
+				"warning: field %d: size (%d) is less than base type size (%d)\n",
+				dfield.num, dfield.size, dfield.btype.Size(),
+			)
+		}
+		// dfield.btype = types.BaseByte // TODO
+		// return fmt.Errorf(
+		// 	"field %d: size (%d) is less than base type size (%d)",
+		// 	dfield.num, dfield.size, dfield.btype.Size())
 	}
 
 	if !pfound {
+		d.opts.logger.Printf(
+			"not pfound\n",
+		)
 		return nil
 	}
 
@@ -682,7 +697,7 @@ func (d *decoder) parseDataFields(dm *defmsg, knownMsg bool, msgv reflect.Value)
 			if err == nil {
 				continue
 			}
-			return reflect.Value{}, fmt.Errorf("error parsing data message: %v", err)
+			return reflect.Value{}, fmt.Errorf("error parsing data message: %w", err)
 		case types.TimeUTC, types.TimeLocal:
 			d.parseTimeStamp(dm, fieldv, pfield)
 		case types.Lat:
